@@ -4,12 +4,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.sudo248.*;
 import org.sudo248.drafts.Draft;
-import org.sudo248.exceptions.WebsocketNotConnectedException;
-import org.sudo248.exceptions.WrappedIOException;
 import org.sudo248.frames.CloseFrame;
 import org.sudo248.frames.FrameData;
 import org.sudo248.handshake.Handshake;
 import org.sudo248.handshake.client.ClientHandshake;
+import org.sudo248.exceptions.WebsocketNotConnectedException;
+import org.sudo248.exceptions.WrappedIOException;
 import org.sudo248.utils.SocketChannelIOUtils;
 
 

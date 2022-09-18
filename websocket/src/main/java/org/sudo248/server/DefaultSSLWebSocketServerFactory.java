@@ -1,7 +1,6 @@
 package org.sudo248.server;
 
 import org.sudo248.AbstractWebSocketListenerImpl;
-import org.sudo248.WebSocket;
 import org.sudo248.WebSocketImpl;
 import org.sudo248.drafts.Draft;
 import org.sudo248.ssl.SSLChannelImpl;

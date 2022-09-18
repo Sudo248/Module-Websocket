@@ -1,10 +1,10 @@
 package org.sudo248.frames;
 
+import org.sudo248.utils.CharsetFunctions;
 import org.sudo248.common.Opcode;
 import org.sudo248.exceptions.InvalidDataException;
 import org.sudo248.exceptions.InvalidFrameException;
 import org.sudo248.utils.ByteBufferUtils;
-import org.sudo248.utils.CharsetFunctions;
 
 import java.nio.ByteBuffer;
 import java.util.Objects;

@@ -1,7 +1,7 @@
 package org.sudo248.test;
 
-import org.sudo248.client.WebSocketClient;
 import org.sudo248.handshake.server.ServerHandshake;
+import org.sudo248.client.WebSocketClient;
 
 import java.io.BufferedReader;
 import java.io.IOException;

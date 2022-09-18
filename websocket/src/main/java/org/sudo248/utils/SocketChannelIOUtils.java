@@ -1,8 +1,8 @@
 package org.sudo248.utils;
 
 import org.sudo248.WebSocketImpl;
-import org.sudo248.WrappedByteChannel;
 import org.sudo248.common.Role;
+import org.sudo248.WrappedByteChannel;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;

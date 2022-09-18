@@ -3,8 +3,8 @@ package org.sudo248;
 import org.sudo248.common.Opcode;
 import org.sudo248.common.ReadyState;
 import org.sudo248.drafts.Draft;
-import org.sudo248.exceptions.WebsocketNotConnectedException;
 import org.sudo248.frames.FrameData;
+import org.sudo248.exceptions.WebsocketNotConnectedException;
 import org.sudo248.protocols.Protocol;
 
 import javax.net.ssl.SSLSession;

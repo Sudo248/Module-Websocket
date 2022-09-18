@@ -1,6 +1,5 @@
 package org.sudo248.handshake.client;
 
-import org.sudo248.handshake.Handshake;
 import org.sudo248.handshake.HandshakeBuilder;
 
 /**

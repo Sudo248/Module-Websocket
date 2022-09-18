@@ -3,8 +3,8 @@ package org.sudo248.extensions;
 import org.sudo248.exceptions.InvalidDataException;
 import org.sudo248.exceptions.InvalidFrameException;
 import org.sudo248.frames.ControlFrame;
-import org.sudo248.frames.DataFrame;
 import org.sudo248.frames.FrameData;
+import org.sudo248.frames.DataFrame;
 
 public abstract class CompressExtension extends DefaultExtension {
     @Override

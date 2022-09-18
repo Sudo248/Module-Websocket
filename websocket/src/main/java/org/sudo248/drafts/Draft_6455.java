@@ -2,6 +2,7 @@ package org.sudo248.drafts;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.sudo248.utils.CharsetFunctions;
 import org.sudo248.WebSocketImpl;
 import org.sudo248.common.*;
 import org.sudo248.exceptions.*;
@@ -16,7 +17,6 @@ import org.sudo248.handshake.server.ServerHandshakeBuilder;
 import org.sudo248.protocols.Protocol;
 import org.sudo248.protocols.ProtocolImpl;
 import org.sudo248.utils.Base64;
-import org.sudo248.utils.CharsetFunctions;
 
 import java.math.BigInteger;
 import java.nio.ByteBuffer;

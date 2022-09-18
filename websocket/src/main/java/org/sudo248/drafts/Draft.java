@@ -2,14 +2,15 @@ package org.sudo248.drafts;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.sudo248.WebSocketImpl;
 import org.sudo248.common.CloseHandshakeType;
 import org.sudo248.common.HandshakeState;
 import org.sudo248.common.Opcode;
-import org.sudo248.common.Role;
 import org.sudo248.exceptions.IncompleteHandshakeException;
 import org.sudo248.exceptions.InvalidDataException;
 import org.sudo248.exceptions.InvalidHandshakeException;
+import org.sudo248.utils.CharsetFunctions;
+import org.sudo248.WebSocketImpl;
+import org.sudo248.common.Role;
 import org.sudo248.frames.*;
 import org.sudo248.handshake.Handshake;
 import org.sudo248.handshake.HandshakeBuilder;
@@ -19,7 +20,6 @@ import org.sudo248.handshake.client.ClientHandshakeBuilderImpl;
 import org.sudo248.handshake.server.ServerHandshake;
 import org.sudo248.handshake.server.ServerHandshakeBuilder;
 import org.sudo248.handshake.server.ServerHandshakeBuilderImpl;
-import org.sudo248.utils.CharsetFunctions;
 
 import java.nio.ByteBuffer;
 import java.util.Collections;

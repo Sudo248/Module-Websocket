@@ -21,7 +21,7 @@ public abstract class AbstractWebSocketListenerImpl implements WebSocketListener
     /**
      * This default implementation does not do anything. Go ahead and overwrite it.
      *
-     * @see org.sudo248.WebSocketListener#onWebSocketHandshakeReceivedAsServer(WebSocket,
+     * @see WebSocketListener#onWebSocketHandshakeReceivedAsServer(WebSocket,
      * Draft, ClientHandshake)
      */
     @Override
@@ -42,7 +42,7 @@ public abstract class AbstractWebSocketListenerImpl implements WebSocketListener
      * This default implementation does not do anything which will cause the connections to always
      * progress.
      *
-     * @see org.sudo248.WebSocketListener#onWebSocketHandshakeSentAsClient(WebSocket,ClientHandshake)
+     * @see WebSocketListener#onWebSocketHandshakeSentAsClient(WebSocket,ClientHandshake)
      */
     @Override
     public void onWebSocketHandshakeSentAsClient(
@@ -55,7 +55,7 @@ public abstract class AbstractWebSocketListenerImpl implements WebSocketListener
      * This default implementation will send a pong in response to the received ping. The pong frame
      * will have the same payload as the ping frame.
      *
-     * @see org.sudo248.WebSocketListener#onWebSocketPing(WebSocket, FrameData)
+     * @see WebSocketListener#onWebSocketPing(WebSocket, FrameData)
      */
     @Override
     public void onWebSocketPing(WebSocket ws, FrameData frameData) {
@@ -65,7 +65,7 @@ public abstract class AbstractWebSocketListenerImpl implements WebSocketListener
     /**
      * This default implementation does not do anything. Go ahead and overwrite it.
      *
-     * @see org.sudo248.WebSocketListener#onWebSocketPong(WebSocket, FrameData)
+     * @see WebSocketListener#onWebSocketPong(WebSocket, FrameData)
      */
     @Override
     public void onWebSocketPong(WebSocket ws, FrameData frameData) {
@@ -78,7 +78,7 @@ public abstract class AbstractWebSocketListenerImpl implements WebSocketListener
      *
      * @param ws The <tt>WebSocket</tt> connection from which the ping frame will be sent.
      * @return PingAbstractFrame to be sent.
-     * @see org.sudo248.WebSocketListener#onPreparePing(WebSocket)
+     * @see WebSocketListener#onPreparePing(WebSocket)
      */
     @Override
     public PingFrame onPreparePing(WebSocket ws) {

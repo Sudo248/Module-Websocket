@@ -1,9 +1,9 @@
 package org.sudo248.server;
 
 import org.sudo248.AbstractWebSocketListenerImpl;
-import org.sudo248.WebSocketFactory;
 import org.sudo248.WebSocketImpl;
 import org.sudo248.drafts.Draft;
+import org.sudo248.WebSocketFactory;
 
 import java.io.IOException;
 import java.nio.channels.ByteChannel;
