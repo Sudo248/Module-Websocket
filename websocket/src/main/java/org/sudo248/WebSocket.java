@@ -3,11 +3,12 @@ package org.sudo248;
 import org.sudo248.common.Opcode;
 import org.sudo248.common.ReadyState;
 import org.sudo248.drafts.Draft;
-import org.sudo248.frames.FrameData;
+import org.sudo248.frames.Frame;
 import org.sudo248.exceptions.WebsocketNotConnectedException;
 import org.sudo248.protocols.Protocol;
 
 import javax.net.ssl.SSLSession;
+import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.Collection;
@@ -75,18 +76,28 @@ public interface WebSocket {
     void send(byte[] bytes);
 
     /**
+     * send an object that is a Serializable to the other end.
+     *
+     * @param object is a Serializable
+     * @throws IllegalArgumentException       the data is null
+     * @throws WebsocketNotConnectedException websocket is not yet connected
+     */
+
+    void send(Object object);
+
+    /**
      * Send a frame to the other end
      *
-     * @param frameData the frame to send to the other end
+     * @param frame the frame to send to the other end
      */
-    void sendFrame(FrameData frameData);
+    void sendFrame(Frame frame);
 
     /**
      * Send a collection of frames to the other end
      *
      * @param frames the frames to send to the other end
      */
-    void sendFrame(Collection<FrameData> frames);
+    void sendFrame(Collection<Frame> frames);
 
     /**
      * Send a ping to the other end

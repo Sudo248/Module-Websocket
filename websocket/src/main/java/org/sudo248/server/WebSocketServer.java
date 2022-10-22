@@ -5,11 +5,18 @@ import org.slf4j.LoggerFactory;
 import org.sudo248.*;
 import org.sudo248.drafts.Draft;
 import org.sudo248.frames.CloseFrame;
-import org.sudo248.frames.FrameData;
+import org.sudo248.frames.Frame;
 import org.sudo248.handshake.Handshake;
 import org.sudo248.handshake.client.ClientHandshake;
 import org.sudo248.exceptions.WebsocketNotConnectedException;
 import org.sudo248.exceptions.WrappedIOException;
+import org.sudo248.mqtt.MqttConnection;
+import org.sudo248.mqtt.MqttListener;
+import org.sudo248.mqtt.MqttManager;
+import org.sudo248.mqtt.database.H2Builder;
+import org.sudo248.mqtt.model.MqttMessage;
+import org.sudo248.mqtt.model.Subscription;
+import org.sudo248.mqtt.repository.SubscriptionRepository;
 import org.sudo248.utils.SocketChannelIOUtils;
 
 
@@ -21,9 +28,7 @@ import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.util.*;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CopyOnWriteArraySet;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -32,12 +37,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  * HTTP handshake portion of WebSockets. It's up to a subclass to add functionality/purpose to the
  * server.
  */
-public abstract class WebSocketServer extends AbstractWebSocket implements Runnable {
+public abstract class WebSocketServer extends AbstractWebSocket implements Runnable, MqttListener {
 
     /**
      * Number of current available process
      */
     private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
+
+    private final String pathStore;
 
     /**
      * Logger instance
@@ -63,6 +70,21 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
     private ServerSocketChannel server;
 
     /**
+     * Mqtt connection
+     */
+    private MqttConnection mqttConnection;
+
+    /**
+     * MqttManager
+     */
+    private MqttManager mqttManager;
+
+    /**
+     * H2Builder
+     */
+    private H2Builder h2Builder;
+
+    /**
      * The 'Selector' used to get event keys from the underlying socket.
      */
     private Selector selector;
@@ -70,7 +92,7 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
     /**
      * The Draft of the WebSocket protocol the Server is adhering to.
      */
-    private List<Draft> drafts;
+    private final List<Draft> drafts;
 
     private Thread selectorThread;
 
@@ -78,9 +100,12 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
 
     protected List<WebSocketServerWorker> decoders;
 
-    private List<WebSocketImpl> wsQueue;
+    /**
+     * Queue of WebSocket that request to server
+     */
+    private final Queue<WebSocketImpl> wsQueue;
 
-    private BlockingQueue<ByteBuffer> buffers;
+    private final BlockingQueue<ByteBuffer> buffers;
 
     private int queueInvokes = 0;
 
@@ -97,52 +122,62 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
     /**
      * Creates a WebSocketServer that will attempt to listen on port <var>WebSocketImpl.DEFAULT_PORT</var>.
      *
-     * @see #WebSocketServer(InetSocketAddress, int, List, Collection) more details here
+     * @see #WebSocketServer(String, InetSocketAddress, int, List, Collection) more details here
      */
-    public WebSocketServer() {
-        this(new InetSocketAddress(WebSocketImpl.DEFAULT_PORT), AVAILABLE_PROCESSORS, null);
+    public WebSocketServer(String pathStore) {
+        this(pathStore, new InetSocketAddress(WebSocketImpl.DEFAULT_WSS_PORT), AVAILABLE_PROCESSORS, null);
     }
 
     /**
      * Creates a WebSocketServer that will attempt to bind/listen on the given <var>address</var>.
      *
      * @param address The address to listen to
-     * @see #WebSocketServer(InetSocketAddress, int, List, Collection) more details here
+     * @see #WebSocketServer(String, InetSocketAddress, int, List, Collection) more details here
+     */
+    public WebSocketServer(String pathStore, InetSocketAddress address) {
+        this(pathStore, address, AVAILABLE_PROCESSORS, null);
+    }
+
+    /**
+     * Creates a WebSocketServer that will attempt to bind/listen on the given <var>address</var>.
+     *
+     * @param address The address to listen to
+     * @see #WebSocketServer(String, InetSocketAddress, int, List, Collection) more details here
      */
     public WebSocketServer(InetSocketAddress address) {
-        this(address, AVAILABLE_PROCESSORS, null);
+        this("", address, AVAILABLE_PROCESSORS, null);
     }
 
     /**
      * @param address      The address (host:port) this server should listen on.
-     * @param decodercount The number of {@link WebSocketServerWorker}s that will be used to process the
+     * @param decoderCount The number of {@link WebSocketServerWorker}s that will be used to process the
      *                     incoming network data. By default this will be <code>Runtime.getRuntime().availableProcessors()</code>
-     * @see #WebSocketServer(InetSocketAddress, int, List, Collection) more details here
+     * @see #WebSocketServer(String, InetSocketAddress, int, List, Collection) more details here
      */
-    public WebSocketServer(InetSocketAddress address, int decodercount) {
-        this(address, decodercount, null);
+    public WebSocketServer(String pathStore, InetSocketAddress address, int decoderCount) {
+        this(pathStore, address, decoderCount, null);
     }
 
     /**
      * @param address The address (host:port) this server should listen on.
      * @param drafts  The versions of the WebSocket protocol that this server instance should comply
      *                to. Clients that use an other protocol version will be rejected.
-     * @see #WebSocketServer(InetSocketAddress, int, List, Collection) more details here
+     * @see #WebSocketServer(String, InetSocketAddress, int, List, Collection) more details here
      */
-    public WebSocketServer(InetSocketAddress address, List<Draft> drafts) {
-        this(address, AVAILABLE_PROCESSORS, drafts);
+    public WebSocketServer(String pathStore, InetSocketAddress address, List<Draft> drafts) {
+        this(pathStore, address, AVAILABLE_PROCESSORS, drafts);
     }
 
     /**
      * @param address      The address (host:port) this server should listen on.
-     * @param decodercount The number of {@link WebSocketServerWorker}s that will be used to process the
+     * @param decoderCount The number of {@link WebSocketServerWorker}s that will be used to process the
      *                     incoming network data. By default this will be <code>Runtime.getRuntime().availableProcessors()</code>
      * @param drafts       The versions of the WebSocket protocol that this server instance should
      *                     comply to. Clients that use an other protocol version will be rejected.
-     * @see #WebSocketServer(InetSocketAddress, int, List, Collection) more details here
+     * @see #WebSocketServer(String, InetSocketAddress, int, List, Collection) more details here
      */
-    public WebSocketServer(InetSocketAddress address, int decodercount, List<Draft> drafts) {
-        this(address, decodercount, drafts, new HashSet<WebSocket>());
+    public WebSocketServer(String pathStore, InetSocketAddress address, int decoderCount, List<Draft> drafts) {
+        this(pathStore, address, decoderCount, drafts, new HashSet<>());
     }
 
     /**
@@ -150,13 +185,13 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
      * comply with <tt>Draft</tt> version <var>draft</var>.
      *
      * @param address              The address (host:port) this server should listen on.
-     * @param decodercount         The number of {@link WebSocketServerWorker}s that will be used to process
+     * @param decoderCount         The number of {@link WebSocketServerWorker}s that will be used to process
      *                             the incoming network data. By default this will be
      *                             <code>Runtime.getRuntime().availableProcessors()</code>
      * @param drafts               The versions of the WebSocket protocol that this server instance
      *                             should comply to. Clients that use an other protocol version will
      *                             be rejected.
-     * @param connectionscontainer Allows to specify a collection that will be used to store the
+     * @param connectionsContainer Allows to specify a collection that will be used to store the
      *                             websockets in. <br> If you plan to often iterate through the
      *                             currently connected websockets you may want to use a collection
      *                             that does not require synchronization like a {@link
@@ -168,28 +203,28 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
      * @see <a href="https://github.com/TooTallNate/Java-WebSocket/wiki/Drafts" > more about
      * drafts</a>
      */
-    public WebSocketServer(InetSocketAddress address, int decodercount, List<Draft> drafts,
-                           Collection<WebSocket> connectionscontainer) {
-        if (address == null || decodercount < 1 || connectionscontainer == null) {
+    public WebSocketServer(String pathStore, InetSocketAddress address, int decoderCount, List<Draft> drafts,
+                           Collection<WebSocket> connectionsContainer) {
+        if (address == null || decoderCount < 1 || connectionsContainer == null) {
             throw new IllegalArgumentException(
                     "address and connections container must not be null and you need at least 1 decoder");
         }
 
+        this.pathStore = pathStore;
         if (drafts == null) {
             this.drafts = Collections.emptyList();
         } else {
             this.drafts = drafts;
         }
-
         this.address = address;
-        this.connections = connectionscontainer;
+        this.connections = connectionsContainer;
         setIsTcpNoDelay(false);
         setIsReuseAddress(false);
         wsQueue = new LinkedList<>();
 
-        decoders = new ArrayList<>(decodercount);
+        decoders = new ArrayList<>(decoderCount);
         buffers = new LinkedBlockingQueue<>();
-        for (int i = 0; i < decodercount; i++) {
+        for (int i = 0; i < decoderCount; i++) {
             WebSocketServerWorker ex = new WebSocketServerWorker();
             decoders.add(ex);
         }
@@ -318,7 +353,7 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
     private void doAdditionalRead() throws InterruptedException, IOException {
         WebSocketImpl ws;
         while (!wsQueue.isEmpty()) {
-            ws = wsQueue.remove(0);
+            ws = wsQueue.poll();
             WrappedByteChannel c = ((WrappedByteChannel) ws.getChannel());
             ByteBuffer buf = takeBuffer();
             try {
@@ -361,18 +396,17 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
         Socket socket = channel.socket();
         socket.setTcpNoDelay(isTcpNoDelay());
         socket.setKeepAlive(true);
-        WebSocketImpl w = wsf.createWebSocket(this, drafts);
-        w.setSelectionKey(channel.register(selector, SelectionKey.OP_READ, w));
+        WebSocketImpl ws = wsf.createWebSocket(this, drafts);
+        ws.setSelectionKey(channel.register(selector, SelectionKey.OP_READ, ws));
         try {
-            w.setChannel(wsf.wrapChannel(channel, w.getSelectionKey()));
+            ws.setChannel(wsf.wrapChannel(channel, ws.getSelectionKey()));
             i.remove();
-            allocateBuffers(w);
+            allocateBuffers(ws);
         } catch (IOException ex) {
-            if (w.getSelectionKey() != null) {
-                w.getSelectionKey().cancel();
+            if (ws.getSelectionKey() != null) {
+                ws.getSelectionKey().cancel();
             }
-
-            handleIOException(w.getSelectionKey(), null, ex);
+            handleIOException(ws.getSelectionKey(), null, ex);
         }
     }
 
@@ -391,7 +425,6 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
         ByteBuffer buf = takeBuffer();
         if (ws.getChannel() == null) {
             key.cancel();
-
             handleIOException(key, ws, new IOException());
             return false;
         }
@@ -456,10 +489,21 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
                 ex.start();
             }
             onStart();
+            log.info("WebSocket running on: ws://" + address.getHostString() + ":" + address.getPort());
         } catch (IOException ex) {
-            handleFatal(null, ex);
+            handleInterrupt(null, ex);
             return false;
         }
+        return true;
+    }
+
+    private boolean doSetupMqttConnection() {
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+        h2Builder = new H2Builder(pathStore, scheduler).initStore();
+        SubscriptionRepository subscriptionRepository = h2Builder.subscriptionRepository();
+        mqttManager = new MqttManager(subscriptionRepository);
+        mqttManager.getSubscriptionFromDb();
+        mqttConnection = new MqttConnection(mqttManager.getPublishers(), this, mqttManager.getSubscriberTopic());
         return true;
     }
 
@@ -507,9 +551,10 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
                 onError(null, e);
             }
         }
+        h2Builder.closeStore();
     }
-    
-    protected void allocateBuffers(WebSocket c) throws InterruptedException {
+
+    protected void allocateBuffers(WebSocket ws) throws InterruptedException {
         if (queueSize.get() >= 2 * decoders.size() + 1) {
             return;
         }
@@ -565,7 +610,7 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
         }
     }
 
-    private void handleFatal(WebSocket ws, Exception e) {
+    private void handleInterrupt(WebSocket ws, Exception e) {
         log.error("Shutdown due to fatal error", e);
         onError(ws, e);
 
@@ -594,7 +639,7 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
      * This method performs remove operations on the connection and therefore also gives control over
      * whether the operation shall be synchronized
      * <p>
-     * {@link #WebSocketServer(InetSocketAddress, int, List, Collection)} allows to specify a
+     * {@link #WebSocketServer(String,InetSocketAddress, int, List, Collection)} allows to specify a
      * collection which will be used to store current connections in.<br> Depending on the type on the
      * connection, modifications of that collection may have to be synchronized.
      *
@@ -677,6 +722,17 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
         WebSocketImpl impl = (WebSocketImpl) ws;
         return ((SocketChannel) impl.getSelectionKey().channel()).socket();
     }
+
+    /**
+     * precess when mess is MqttMessage
+     * @param message
+     * @param ws
+     */
+
+    private void onMqttMessage(MqttMessage message, WebSocket ws) {
+        mqttConnection.handleMessage(message, ws);
+    }
+
     /**
      * Cal
      * led after an opening handshake has been performed and the given websocket is ready to be
@@ -708,6 +764,15 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
     public abstract void onMessage(WebSocket ws, String message);
 
     /**
+     * Callback for object received from the remote host
+     *
+     * @param ws    The <tt>WebSocket</tt> instance this event is occurring on.
+     * @param object The Object decoded message that was received.
+     * @see #onMessage(WebSocket, Object)
+     **/
+    public abstract void onMessage(WebSocket ws, Object object);
+
+    /**
      * Called when errors occurs. If an error causes the websocket connection to fail {@link
      * #onClose(WebSocket, int, String, boolean)} will be called additionally.<br> This method will be
      * called primarily because of IO or protocol errors.<br> If the given exception is an
@@ -722,7 +787,7 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
     /**
      * Called when the server started up successfully.
      * <p>
-     * If any error occurred, onError is called instead.
+     * If any error occurred, onMqttError is called instead.
      */
     public abstract void onStart();
 
@@ -730,10 +795,10 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
      * Callback for binary messages received from the remote host
      *
      * @param ws    The <tt>WebSocket</tt> instance this event is occurring on.
-     * @param message The binary message that was received.
+     * @param blob The binary message that was received.
      * @see #onMessage(WebSocket, ByteBuffer)
      **/
-    public void onMessage(WebSocket ws, ByteBuffer message) {
+    public void onMessage(WebSocket ws, ByteBuffer blob) {
     }
 
     /**
@@ -820,7 +885,7 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
         if (strData == null && byteData == null) {
             return;
         }
-        Map<Draft, List<FrameData>> draftFrames = new HashMap<>();
+        Map<Draft, List<Frame>> draftFrames = new HashMap<>();
         List<WebSocket> clientCopy;
         synchronized (clients) {
             clientCopy = new ArrayList<>(clients);
@@ -846,10 +911,10 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
      * @param strData       the string data, can be null
      * @param byteData       the byte buffer data, can be null
      */
-    private void fillFrames(Draft draft, Map<Draft, List<FrameData>> draftFrames, String strData,
+    private void fillFrames(Draft draft, Map<Draft, List<Frame>> draftFrames, String strData,
                             ByteBuffer byteData) {
         if (!draftFrames.containsKey(draft)) {
-            List<FrameData> frames = null;
+            List<Frame> frames = null;
             if (strData != null) {
                 frames = draft.createFrames(strData, false);
             }
@@ -861,7 +926,7 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
             }
         }
     }
-    
+
     @Override
     public final void onWebSocketMessage(WebSocket ws, String message) {
         onMessage(ws, message);
@@ -870,6 +935,15 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
     @Override
     public final void onWebSocketMessage(WebSocket ws, ByteBuffer blob) {
         onMessage(ws, blob);
+    }
+
+    @Override
+    public void onWebSocketMessage(WebSocket ws, Object object) {
+        if (object instanceof MqttMessage) {
+            onMqttMessage((MqttMessage) object, ws);
+        } else {
+            onMessage(ws, object);
+        }
     }
 
     @Override
@@ -893,7 +967,6 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
                 Thread.currentThread().interrupt();
             }
         }
-
     }
 
     @Override
@@ -934,14 +1007,15 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
         return (InetSocketAddress) getSocket(ws).getRemoteSocketAddress();
     }
 
-   
-
     @Override
     public void run() {
         if (!doEnsureSingleThread()) {
             return;
         }
         if (!doSetupSelectorAndServerThread()) {
+            return;
+        }
+        if (!doSetupMqttConnection()) {
             return;
         }
         try {
@@ -996,7 +1070,7 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
             }
         } catch (RuntimeException e) {
             // should hopefully never occur
-            handleFatal(null, e);
+            handleInterrupt(null, e);
         } finally {
             doServerShutdown();
         }
@@ -1016,15 +1090,55 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
         }
     }
 
+    @Override
+    public void onMqttConnect(MqttMessage message) {
+
+    }
+
+    @Override
+    public void onMqttSubscribe(MqttMessage message) {
+        log.info("onMqttSubscribe: message" + message);
+        Subscription subscription = new Subscription(
+                message.getClientId(),
+                message.getTopic()
+        );
+        mqttManager.addSubscription(subscription);
+        publish(message);
+    }
+
+    @Override
+    public void onMqttUnSubscribe(MqttMessage message) {
+        Subscription subscription = new Subscription(
+                message.getClientId(),
+                message.getTopic()
+        );
+        mqttManager.removeSubscription(subscription);
+        publish(message);
+    }
+
+    @Override
+    public void onMqttDisconnect(MqttMessage message) {
+
+    }
+
+    @Override
+    public void onMqttError(MqttMessage message, String reason) {
+
+    }
+
+    public void publish(MqttMessage message) {
+        mqttConnection.publish(message.getTopic(), message);
+    }
+
     /**
      * This class is used to process incoming data
      */
     public class WebSocketServerWorker extends Thread {
 
-        private final BlockingQueue<WebSocketImpl> wsQueue;
+        private final BlockingQueue<WebSocketImpl> wsBLockingQueue;
 
         public WebSocketServerWorker() {
-            wsQueue = new LinkedBlockingQueue<>();
+            wsBLockingQueue = new LinkedBlockingQueue<>();
             setName("WebSocketWorker-" + getId());
             setUncaughtExceptionHandler(new UncaughtExceptionHandler() {
                 @Override
@@ -1035,7 +1149,7 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
         }
 
         public void put(WebSocketImpl ws) throws InterruptedException {
-            wsQueue.put(ws);
+            wsBLockingQueue.put(ws);
         }
 
         @Override
@@ -1044,7 +1158,7 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
             try {
                 while (true) {
                     ByteBuffer buf;
-                    ws = wsQueue.take();
+                    ws = wsBLockingQueue.take();
                     buf = ws.inQueue.poll();
                     assert (buf != null);
                     doDecode(ws, buf);
@@ -1055,7 +1169,7 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
             } catch (VirtualMachineError | ThreadDeath | LinkageError e) {
                 log.error("Got fatal error in worker thread {}", getName());
                 Exception exception = new Exception(e);
-                handleFatal(ws, exception);
+                handleInterrupt(ws, exception);
             } catch (Throwable e) {
                 log.error("Uncaught exception in thread {}: {}", getName(), e);
                 if (ws != null) {
@@ -1082,5 +1196,5 @@ public abstract class WebSocketServer extends AbstractWebSocket implements Runna
                 pushBuffer(buf);
             }
         }
-    }    
+    }
 }
